@@ -1,5 +1,7 @@
 <% include ../includes/header.ejs %>
-    <form action="" method="post" enctype="multipart/form-data">
+<% include ./sidebar.ejs %>
+<div class="col-sm-10">
+    <form action="" method="post" enctype="multipart/form-data" id="editForm">
         <input type="hidden" name="_csrf" value="<%=csrfToken%>" />
         <table class="table table-bordered">
             <tr>
@@ -21,9 +23,48 @@
             </tr>
             <tr>
                 <th>설명</th>
-                <td><input type="text" name="description" class="form-control" value="<%=product.description%>"/></td>
+                <td>
+                    <textarea name="description" class="form-control" id="summernote"><%-product.description%></textarea>
+                </td>
             </tr>
         </table>
         <button class="btn btn-primary">작성하기</button>
     </form>
+</div>
 <% include ../includes/footer.ejs %>
+<!-- 스타일관련 -->
+<link href="http://cdnjs.cloudflare.com/ajax/libs/summernote/0.8.6/summernote.css" rel="stylesheet">
+<!-- 자바스크립트관련 -->
+<script src="http://cdnjs.cloudflare.com/ajax/libs/summernote/0.8.6/summernote.js"></script>
+<!-- 한글관련 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/summernote/0.8.6/lang/summernote-ko-KR.min.js"></script>
+<script>
+$('#summernote').summernote({
+    lang: 'ko-KR',
+    height: 300,
+    callbacks : {
+        onImageUpload: function(files) {
+            sendFile(files[0]);
+        }
+    }
+});
+
+$('#editForm').submit(function(){
+    $('input[name=files]').remove();
+});
+function sendFile(file, editor, welEditable) {
+    data = new FormData();
+    data.append("thumbnail", file);
+    $.ajax({
+        data: data,
+        type: "POST",
+        url: '/admin/products/ajax_summernote/',
+        cache: false,
+        contentType: false,
+        processData: false,
+        success: function(url) {
+            $('#summernote').summernote("insertImage", url);
+        }
+    });
+}
+</script>

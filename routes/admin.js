@@ -2,8 +2,12 @@ var express = require('express');
 var router = express.Router();
 var ProductsModel = require('../models/ProductsModel');
 var CommentsModel = require('../models/CommentsModel');
+var CheckoutModel = require('../models/CheckoutModel');
+
+
 var csrf = require('csurf');
 var csrfProtection = csrf({ cookie: true });
+var co = require('co');
 
 var path = require('path');
 var uploadDir = path.join( __dirname , '../uploads' ); // 루트의 uploads위치에 저장한다.
@@ -36,7 +40,7 @@ router.get('/products', function(req, res){
     });
 });
 
-router.get('/products/write', csrfProtection, function(req,res){
+router.get('/products/write' , csrfProtection, function(req,res){
     //edit에서도 같은 form을 사용하므로 빈 변수( product )를 넣어서 에러를 피해준다
     res.render( 'admin/form' , { product : "" , csrfToken : req.csrfToken() } );
 });
@@ -47,6 +51,7 @@ router.post('/products/write', upload.single('thumbnail'), csrfProtection, funct
         thumbnail : (req.file) ? req.file.filename : "",
         price : req.body.price,
         description : req.body.description,
+        username : req.user.username
     });
     //이 아래는 수정되지 않았음
     var validationError = product.validateSync();
@@ -62,15 +67,22 @@ router.post('/products/write', upload.single('thumbnail'), csrfProtection, funct
 
 router.get('/products/detail/:id' , function(req, res){
     //url 에서 변수 값을 받아올떈 req.params.id 로 받아온다
-    ProductsModel.findOne( { 'id' :  req.params.id } , function(err ,product){
-        //제품정보를 받고 그안에서 댓글을 받아온다.
-        CommentsModel.find({ product_id : req.params.id } , function(err, comments){
-            res.render('admin/productsDetail', { product: product , comments : comments });
-        });        
+    var getData = co(function* (){
+       return {
+           product : yield ProductsModel.findOne({
+               'id' : req.params.id
+           }).exec(),
+           comments : yield CommentsModel.find({
+               'product_id' : req.params.id
+           }).exec()
+       };
+    });
+    getData.then(function(result){
+        res.render('admin/productsDetail', { product: result.product , comments : result.comments });
     });
 });
 
-router.get('/products/edit/:id' , csrfProtection, function(req, res){
+router.get('/products/edit/:id', csrfProtection, function(req, res){
     //기존에 폼에 value안에 값을 셋팅하기 위해 만든다.
     ProductsModel.findOne({ id : req.params.id } , function(err, product){
         res.render('admin/form', { product : product, csrfToken : req.csrfToken() });
@@ -121,6 +133,67 @@ router.post('/products/ajax_comment/insert', function(req,res){
 router.post('/products/ajax_comment/delete', function(req, res){
     CommentsModel.remove({ id : req.body.comment_id } , function(err){
         res.json({ message : "success" });
+    });
+});
+
+router.post('/products/ajax_summernote', upload.single('thumbnail'), function(req,res){
+    res.send( '/uploads/' + req.file.filename);
+});
+
+router.get('/order', function(req,res){
+    CheckoutModel.find( function(err, orderList){ //첫번째 인자는 err, 두번째는 받을 변수명
+        res.render( 'admin/orderList' , 
+            { orderList : orderList }
+        );
+    });
+});
+
+router.get('/order/edit/:id', function(req,res){
+    CheckoutModel.findOne( { id : req.params.id } , function(err, order){
+        res.render( 'admin/orderForm' , 
+            { order : order }
+        );
+    });
+});
+
+router.post('/order/edit/:id', function(req,res){
+    var query = {
+        status : req.body.status,
+        song_jang : req.body.song_jang
+    };
+ 
+    CheckoutModel.update({ id : req.params.id }, { $set : query }, function(err){
+        res.redirect('/admin/order');
+    });
+});
+
+router.get('/statistics', function(req,res){
+    CheckoutModel.find( function(err, orderList){ 
+
+        var barData = [];   // 넘겨줄 막대그래프 데이터 초기값 선언
+        var pieData = [];   // 원차트에 넣어줄 데이터 삽입
+        orderList.forEach(function(order){
+            // 08-10 형식으로 날짜를 받아온다
+            var date = new Date(order.created_at);
+            var monthDay = (date.getMonth()+1) + '-' + date.getDate();
+            
+            // 날짜에 해당하는 키값으로 조회
+            if(monthDay in barData){
+                barData[monthDay]++; //있으면 더한다
+            }else{
+                barData[monthDay] = 1; //없으면 초기값 1넣어준다.
+            }
+ 
+            // 결재 상태를 검색해서 조회
+            if(order.status in pieData){
+                pieData[order.status]++; //있으면 더한다
+            }else{
+                pieData[order.status] = 1; //없으면 결재상태+1
+            }
+ 
+        });
+ 
+        res.render('admin/statistics' , { barData : barData , pieData:pieData });
     });
 });
 
